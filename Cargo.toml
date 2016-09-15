@@ -1,0 +1,8 @@
+[package]
+name = "async-socks"
+version = "0.0.1"
+authors = ["Tomasz Miąsko <tomasz.miasko@gmail.com>"]
+
+[dependencies]
+futures = "0.1"
+tokio-core = "0.1"
