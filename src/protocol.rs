@@ -59,8 +59,7 @@ pub fn connect_stream<S: Read + Write + 'static, D: ToAddr>(stream: S, dest: D) 
             // Prepare connect request.
             buff.clear();
             buff.extend(&[VERSION, CMD_CONNECT, RSV]);
-            write_address(&mut buff, &dest).unwrap();
-            Ok((stream, buff))
+            write_address(&mut buff, &dest).and(Ok((stream, buff)))
         }).and_then(|(stream, buff)| {
             // Send connect request
             write_all(stream, buff)
@@ -126,7 +125,7 @@ fn write_port(buffer: &mut Vec<u8>, port: u16) -> Result<()> {
 
 fn write_domain(buffer: &mut Vec<u8>, domain: &str) -> Result<()> {
     let length = try!(domain.len().try_into() .map_err(|_| {
-        other("domain names longer than 255 bytes are unsupported by SOCKSv5 protocol.")
+        invalid_input(format!("socks: invalid domain name: {}", domain))
     }));
     try!(buffer.write(&[length]));
     try!(buffer.write(domain.as_bytes()));
@@ -171,12 +170,15 @@ fn read_domain_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFut
         let domain_length = usize::from(buff[0]) + 2;
         buff.resize(domain_length, 0);
         read_exact(stream, buff)
-    }).map(|(stream, buff)| {
+    }).and_then(|(stream, buff)| {
         // Parse domain name and port
         let domain_length = buff.len() - 2;
-        let domain = str::from_utf8(&buff[0..domain_length]).unwrap();
-        let port = BigEndian::read_u16(&buff[domain_length..]);
-        (Addr::Domain(DomainAddr::new(domain, port)), stream)
+        str::from_utf8(&buff[0..domain_length]).map_err(|_| {
+            invalid_data("socks: received invalid domain name")
+        }).map(|domain| {
+            let port = BigEndian::read_u16(&buff[domain_length..]);
+            (Addr::Domain(DomainAddr::new(domain, port)), stream)
+        })
     }))
 }
 
@@ -184,6 +186,12 @@ fn other<E>(error: E) -> io::Error
     where E: Into<Box<error::Error + Send + Sync>>
 {
     io::Error::new(ErrorKind::Other, error)
+}
+
+fn invalid_input<E>(error: E) -> io::Error
+    where E: Into<Box<error::Error + Send + Sync>>
+{
+    io::Error::new(ErrorKind::InvalidInput, error)
 }
 
 fn invalid_data<E>(error: E) -> io::Error
