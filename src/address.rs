@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::Error;
 use std::io::ErrorKind;
 use std::io::Result;
@@ -34,6 +35,12 @@ impl DomainAddr {
     pub fn set_port(&mut self, port: u16) { self.port = port; }
 }
 
+impl fmt::Display for DomainAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.domain, self.port)
+    }
+}
+
 /// Representation of an address for use with SOCKS proxy.
 ///
 /// An address can either represent the IPv4 address, IPv64 address, or a
@@ -61,6 +68,16 @@ impl Addr {
             Addr::V4(ref mut addr)     => addr.set_port(port),
             Addr::V6(ref mut addr)     => addr.set_port(port),
             Addr::Domain(ref mut addr) => addr.set_port(port),
+        }
+    }
+}
+
+impl fmt::Display for Addr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Addr::V4(ref addr)     => addr.fmt(f),
+            Addr::V6(ref addr)     => addr.fmt(f),
+            Addr::Domain(ref addr) => addr.fmt(f),
         }
     }
 }
@@ -214,5 +231,12 @@ mod tests {
             Addr::Domain(DomainAddr::new("example.com", 80)),
             Addr::from_str("example.com:80").unwrap());
         assert!(Addr::from_str("not an address").is_err());
+    }
+
+    #[test]
+    fn display() {
+        assert_eq!(
+            "example.com:1234",
+            format!("{}", Addr::Domain(DomainAddr::new("example.com", 1234))));
     }
 }
