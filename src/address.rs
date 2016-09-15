@@ -1,9 +1,10 @@
+use std::io::Error;
+use std::io::ErrorKind;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::SocketAddrV6;
-
-// TODO implement Display and FromStr for TargetAddr
+use std::str::FromStr;
 
 /// A domain address which is a (domain name, port) combination.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -14,8 +15,10 @@ pub struct DomainAddr {
 
 impl DomainAddr {
     /// Creates a new domain address from a domain name and a port.
-    pub fn new(domain: String, port: u16) -> DomainAddr {
-        DomainAddr { domain: domain, port: port }
+    ///
+    /// Note that domain name is not validated in any way.
+    pub fn new(domain: &str, port: u16) -> DomainAddr {
+        DomainAddr { domain: domain.to_owned(), port: port }
     }
 
     /// Returns the domain name associated with this address.
@@ -33,8 +36,8 @@ impl DomainAddr {
 
 /// Representation of an address for use with SOCKS proxy.
 ///
-/// An address can either represent the IPv4 or IPv64 address or a domain name
-/// paired together with a port number.
+/// An address can either represent the IPv4 address, IPv64 address, or a
+/// domain name paired together with a port number.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Addr {
     V4(SocketAddrV4),
@@ -62,6 +65,41 @@ impl Addr {
     }
 }
 
+impl FromStr for DomainAddr {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<DomainAddr> {
+        let i = try!(s.rfind(':').ok_or_else(|| invalid_address(s)));
+        let host = &s[..i];
+        let port = &s[i+1..];
+        let port = try!(u16::from_str(port).map_err(|_| invalid_address(s)));
+        Ok(DomainAddr::new(host, port))
+    }
+}
+
+impl FromStr for Addr {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Addr> {
+        if let Ok(addr) = SocketAddrV4::from_str(s) {
+            return Ok(Addr::V4(addr));
+        } else if let Ok(addr) = SocketAddrV6::from_str(s) {
+            return Ok(Addr::V6(addr));
+        } else if let Ok(addr) = DomainAddr::from_str(s) {
+            return Ok(Addr::Domain(addr));
+        } else {
+            return Err(invalid_address(s));
+        }
+    }
+}
+
+fn invalid_address(s: &str) -> Error {
+    Error::new(
+        ErrorKind::InvalidInput,
+        format!("invalid address: {}", s))
+}
+
+
 /// A trait for objects which can be converted to `Addr`.
 /// 
 /// By default is implemented for the following types:
@@ -69,8 +107,8 @@ impl Addr {
 ///  * `SocketAddr`, `SocketAddrV4`, `SocketAddrV6`, `DomainAddr` implemented
 ///    trivially.
 ///
-///  * `(&str, u16)` - the string should be either a string representation of
-///    an IP address as expected by `FromStr` implementation for `IpvNAddr` or
+///  * `(&str, u16)` - the string should be either a representation of an IP
+///    address as expected by `FromStr` implementation for `IpvNAddr` or
 ///    a host name.
 ///
 ///  * `&str` - the string should be either a string representation of a
@@ -103,6 +141,24 @@ impl ToAddr for SocketAddrV6 {
     }
 }
 
+impl ToAddr for DomainAddr {
+    fn to_addr(&self) -> Result<Addr> {
+        Ok(Addr::Domain(self.clone()))
+    }
+}
+
+impl<'a> ToAddr for (&'a str, u16) {
+    fn to_addr(&self) -> Result<Addr> {
+        Ok(Addr::Domain(DomainAddr::new(self.0, self.1)))
+    }
+}
+
+impl<'a> ToAddr for (&'a str) {
+    fn to_addr(&self) -> Result<Addr> {
+        Addr::from_str(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use address::*;
@@ -124,5 +180,39 @@ mod tests {
         assert_eq!(Addr::V6(ipv6), ipv6.to_addr().unwrap());
         assert_eq!(Addr::V4(ipv4), sockv4.to_addr().unwrap());
         assert_eq!(Addr::V6(ipv6), sockv6.to_addr().unwrap());
+    }
+
+    #[test]
+    fn to_addr_from_domain_addr() {
+        let domain = DomainAddr::new("example.com", 80);
+        assert_eq!(Addr::Domain(domain.clone()), domain.to_addr().unwrap());
+    }
+
+    #[test]
+    fn to_addr_from_str_port_pair() {
+        assert_eq!(
+            Addr::Domain(DomainAddr::new("example.com", 80)),
+            ("example.com", 80).to_addr().unwrap());
+    }
+
+    #[test]
+    fn to_addr_from_str() {
+        assert_eq!(
+            Addr::Domain(DomainAddr::new("example.com", 80)),
+            "example.com:80".to_addr().unwrap());
+    }
+
+    #[test]
+    fn from_str_for_addr() {
+        assert_eq!(
+            Addr::V4(SocketAddrV4::new(Ipv4Addr::new(192, 168, 0, 2), 8080)),
+            Addr::from_str("192.168.0.2:8080").unwrap());
+        assert_eq!(
+            Addr::V6(SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1), 9090, 0, 0)),
+            Addr::from_str("[::1]:9090").unwrap());
+        assert_eq!(
+            Addr::Domain(DomainAddr::new("example.com", 80)),
+            Addr::from_str("example.com:80").unwrap());
+        assert!(Addr::from_str("not an address").is_err());
     }
 }
