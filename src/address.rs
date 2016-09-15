@@ -56,8 +56,8 @@ impl Addr {
     /// Returns the port number associated with this address.
     pub fn port(&self) -> u16 {
         match *self {
-            Addr::V4(ref addr)     => addr.port(),
-            Addr::V6(ref addr)     => addr.port(),
+            Addr::V4(ref addr) => addr.port(),
+            Addr::V6(ref addr) => addr.port(),
             Addr::Domain(ref addr) => addr.port(),
         }
     }
@@ -65,8 +65,8 @@ impl Addr {
     /// Changes the port number associated with this address.
     pub fn set_port(&mut self, port: u16) {
         match *self {
-            Addr::V4(ref mut addr)     => addr.set_port(port),
-            Addr::V6(ref mut addr)     => addr.set_port(port),
+            Addr::V4(ref mut addr) => addr.set_port(port),
+            Addr::V6(ref mut addr) => addr.set_port(port),
             Addr::Domain(ref mut addr) => addr.set_port(port),
         }
     }
@@ -75,8 +75,8 @@ impl Addr {
 impl fmt::Display for Addr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Addr::V4(ref addr)     => addr.fmt(f),
-            Addr::V6(ref addr)     => addr.fmt(f),
+            Addr::V4(ref addr) => addr.fmt(f),
+            Addr::V6(ref addr) => addr.fmt(f),
             Addr::Domain(ref addr) => addr.fmt(f),
         }
     }
@@ -135,6 +135,12 @@ fn invalid_address(s: &str) -> Error {
 pub trait ToAddr {
     /// Converts this object into an `Addr` or returns an error.
     fn to_addr(&self) -> Result<Addr>;
+}
+
+impl ToAddr for Addr {
+    fn to_addr(&self) -> Result<Addr> {
+        Ok(self.clone())
+    }
 }
 
 impl ToAddr for SocketAddr {
