@@ -1,6 +1,6 @@
 # socks
 
-Asynchronous SOCKS 5 proxy client for [Tokio](https://github.com/tokio-rs/tokio).
+Asynchronous SOCKS proxy client for [Tokio](https://github.com/tokio-rs/tokio).
 
 ## Usage
 
@@ -19,7 +19,7 @@ extern crate socks;
 ...
 
 let proxy_addr: SocketAddr = "127.0.0.1:1080".parse().unwrap();
-let conn = socks::connect(&proxy_addr, "example.com:80", &reactor.handle()).map(|(addr, conn)| {
+let conn = socks::connect_v5(&proxy_addr, "example.com:80", &reactor.handle()).map(|(addr, conn)| {
   ...
   Ok(conn)
 });

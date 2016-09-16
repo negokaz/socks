@@ -9,13 +9,10 @@ use address::ToAddr;
 use futures::Future;
 use futures::done;
 use protocol::*;
-use std::io::ErrorKind;
 use std::io::Read;
 use std::io::Result;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::net::SocketAddrV4;
-use std::net::SocketAddrV6;
 use tokio_core::io::read_exact;
 use tokio_core::io::write_all;
 use tokio_core::net::TcpStream;
@@ -59,25 +56,31 @@ pub fn connect_stream<S>(stream: S, destination: Addr) -> IoFuture<S>
     }))
 }
 
+/// Writes a connect request to a given buffer.
 fn write_request(buffer: &mut Vec<u8>, destination: &Addr) -> Result<()> {
     try!(buffer.write(&[VERSION, CMD_CONNECT]));
     write_address(buffer, destination)
 }
 
+/// Writes an address to a given buffer.
 fn write_address(buffer: &mut Vec<u8>, address: &Addr) -> Result<()> {
     match *address {
         Addr::V4(ref sa) => {
             try!(write_port(buffer, sa.port()));
             try!(buffer.write(&sa.ip().octets()));
+            try!(buffer.write(&[0]));
             Ok(())
         }
         Addr::V6(..) => {
             Err(invalid_input("proxy: IPv6 addresses are unsupported in SOCKS4a"))
         }
         Addr::Domain(ref da) => {
-            // TODO check for null?
+            if da.domain().len() > 255 || da.domain().contains('\0') {
+                return Err(invalid_input("proxy: invalid domain name"));
+            }
             try!(write_port(buffer, da.port()));
             try!(buffer.write(&[0, 0, 0, 1]));
+            try!(buffer.write(&[0]));
             try!(buffer.write(da.domain().as_bytes()));
             try!(buffer.write(&[0]));
             Ok(())
@@ -85,6 +88,70 @@ fn write_address(buffer: &mut Vec<u8>, address: &Addr) -> Result<()> {
     }
 }
 
+// Constants used in SOCKS version 4a.
 pub const VERSION: u8 = 4;
 pub const CMD_CONNECT: u8 = 1;
 
+#[cfg(test)]
+mod tests {
+
+    use address::*;
+    use protocol::test::*;
+    use tokio_core::reactor::Core;
+    use v4a::*;
+
+    const RESPONSE_VERSION: u8 = 0;
+    const REQUEST_GRANTED: u8 = 90;
+
+    #[test]
+    fn connect_ipv4() {
+        let stream = Stream::new(&[
+            RESPONSE_VERSION, REQUEST_GRANTED,
+            8, 1,
+            192, 168, 1, 2,
+        ]);
+
+        let mut reactor = Core::new().unwrap();
+        let address = "1.2.3.4:5".to_addr().unwrap();
+        let stream = reactor.run(connect_stream(stream, address)).unwrap();
+
+        assert_eq!([VERSION, CMD_CONNECT,
+                    0, 5,
+                    1, 2, 3, 4,
+                    0],
+                    stream.write_buffer());
+        assert!(stream.read_all());
+    }
+
+    #[test]
+    fn connect_ipv6() {
+        let stream = Stream::new(&[]);
+
+        let mut reactor = Core::new().unwrap();
+        let address = "[::ffff:192.168.0.1]:80".to_addr().unwrap();
+        let error = reactor.run(connect_stream(stream, address)).err().unwrap();
+
+        assert_eq!("proxy: IPv6 addresses are unsupported in SOCKS4a", format!("{}", error));
+    }
+
+    #[test]
+    fn connect_domain() {
+        let stream = Stream::new(&[
+            RESPONSE_VERSION, REQUEST_GRANTED,
+            0, 0,
+            0, 0, 0, 0,
+        ]);
+
+        let mut reactor = Core::new().unwrap();
+        let address = "z.com:80".to_addr().unwrap();
+        let stream = reactor.run(connect_stream(stream, address)).unwrap();
+
+        assert_eq!([VERSION, CMD_CONNECT,
+                    0, 80,
+                    0, 0, 0, 1,
+                    0,
+                    b'z', b'.', b'c', b'o', b'm', 0],
+                    stream.write_buffer());
+        assert!(stream.read_all());
+    }
+}

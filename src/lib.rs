@@ -15,11 +15,11 @@ extern crate tokio_core;
 
 mod address;
 mod protocol;
-mod socks4a;
-mod socks5;
+mod v4a;
+mod v5;
 
 pub use address::Addr;
 pub use address::DomainAddr;
 pub use address::ToAddr;
-//pub use protocol::connect;
-//pub use protocol::connect_stream;
+pub use v4a::connect as connect_v4a;
+pub use v5::connect as connect_v5;

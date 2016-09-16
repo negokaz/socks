@@ -14,12 +14,9 @@ use futures::done;
 use futures::failed;
 use protocol::*;
 use std::convert::TryInto;
-use std::error;
-use std::io::ErrorKind;
 use std::io::Read;
 use std::io::Result;
 use std::io::Write;
-use std::io;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::net::SocketAddr;
@@ -45,6 +42,7 @@ pub fn connect<D>(proxy: &SocketAddr, dest_addr: D, handle: &Handle) -> IoFuture
 }
 
 /// Crates a new connection through SOCKS5 proxy using an existing stream.
+#[doc(hidden)]
 pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
     where S: Read + Write + 'static,
           D: ToAddr
@@ -188,7 +186,7 @@ fn read_domain_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFut
     }))
 }
 
-// Constants used in SOCKS version 5 protocol.
+// Constants used in SOCKS version 5.
 pub const VERSION: u8 = 5;
 pub const AUTH_NONE: u8 = 0;
 pub const AUTH_NO_ACCEPTABLE: u8 = 255;
@@ -201,51 +199,12 @@ pub const ATYP_DOMAIN_NAME: u8 = 3;
 #[cfg(test)]
 mod tests {
     use address::*;
-    use protocol::*;
-    use std::convert::TryInto;
-    use std::io::*;
+    use protocol::test::*;
     use std::str::FromStr;
     use tokio_core::reactor::Core;
+    use v5::*;
 
-    pub const REP_SUCCEEDED: u8 = 0;
-
-    struct Stream {
-        read_buff: Cursor<Vec<u8>>,
-        write_buff: Vec<u8>,
-    }
-
-    impl Stream {
-        fn new(bytes: &[u8]) -> Stream {
-            Stream {
-                read_buff: Cursor::new(bytes.to_owned()),
-                write_buff: Vec::new(),
-            }
-        }
-
-        /// Returns true if all available data have been read from.
-        fn read_all(&self) -> bool {
-            self.read_buff.position() == self.read_buff.get_ref().len().try_into().unwrap()
-        }
-
-        fn write_buffer(&self) -> &[u8] {
-            &self.write_buff
-        }
-    }
-
-    impl Read for Stream {
-        fn read(&mut self, buff: &mut [u8]) -> Result<usize> {
-            self.read_buff.read(buff)
-        }
-    }
-
-    impl Write for Stream {
-        fn write(&mut self, buff: &[u8]) -> Result<usize> {
-            self.write_buff.write(buff)
-        }
-        fn flush(&mut self) -> Result<()> {
-            self.write_buff.flush()
-        }
-    }
+    const REP_SUCCEEDED: u8 = 0;
 
     #[test]
     fn connect_ipv4() {
@@ -325,4 +284,3 @@ mod tests {
         assert_eq!("proxy: No acceptable authentication methods", format!("{}", error));
     }
 }
-
