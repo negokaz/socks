@@ -1,3 +1,9 @@
+// Copyright 2016 Tomasz Miąsko
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE>
+// or the MIT license <LICENSE-MIT>, at your option. You may not use
+// this file except according to those terms.
+
 use std::fmt;
 use std::io::Error;
 use std::io::ErrorKind;
@@ -43,12 +49,15 @@ impl fmt::Display for DomainAddr {
 
 /// Representation of an address for use with SOCKS proxy.
 ///
-/// An address can either represent the IPv4 address, IPv64 address, or a
-/// domain name paired together with a port number.
+/// An address can represent an IPv4 address, an IPv64 address, or a domain
+/// name paired together with a port number.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Addr {
+    /// An IPv4 socket address
     V4(SocketAddrV4),
+    /// An IPv6 socket address
     V6(SocketAddrV6),
+    /// A domain address
     Domain(DomainAddr)
 }
 

@@ -1,5 +1,5 @@
-extern crate async_socks as socks;
 extern crate futures;
+extern crate socks;
 extern crate tokio_core;
 
 use futures::Future;

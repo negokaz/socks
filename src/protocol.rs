@@ -1,3 +1,9 @@
+// Copyright 2016 Tomasz Miąsko
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE>
+// or the MIT license <LICENSE-MIT>, at your option. You may not use
+// this file except according to those terms.
+
 use address::Addr;
 use address::DomainAddr;
 use address::ToAddr;
@@ -26,18 +32,25 @@ use tokio_core::reactor::Handle;
 
 type IoFuture<T> = Box<Future<Item=T, Error=io::Error>>;
 
-pub fn connect<D: ToAddr>(proxy: &SocketAddr, dest: D, handle: &Handle) -> IoFuture<(Addr, TcpStream)> {
-    let dest = match dest.to_addr() {
+/// Crates a new connection through a SOCKS5 proxy.
+pub fn connect<D>(proxy: &SocketAddr, dest_addr: D, handle: &Handle) -> IoFuture<(Addr, TcpStream)>
+    where D: ToAddr
+{
+    let dest_addr = match dest_addr.to_addr() {
         Err(e) => return Box::new(failed(e)),
         Ok(a) => a
     };
     Box::new(TcpStream::connect(&proxy, handle).and_then(|stream| {
-        connect_stream(stream, dest)
+        connect_stream(stream, dest_addr)
     }))
 }
 
-pub fn connect_stream<S: Read + Write + 'static, D: ToAddr>(stream: S, dest: D) -> IoFuture<(Addr, S)> {
-    let dest = match dest.to_addr() {
+/// Crates a new connection through SOCKS5 proxy using an existing stream.
+pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
+    where S: Read + Write + 'static,
+          D: ToAddr
+{
+    let dest_addr = match dest_addr.to_addr() {
         Err(e) => return Box::new(failed(e)),
         Ok(a) => a,
     };
@@ -59,7 +72,7 @@ pub fn connect_stream<S: Read + Write + 'static, D: ToAddr>(stream: S, dest: D) 
             // Prepare connect request.
             buff.clear();
             buff.extend(&[VERSION, CMD_CONNECT, RSV]);
-            write_address(&mut buff, &dest).and(Ok((stream, buff)))
+            write_address(&mut buff, &dest_addr).and(Ok((stream, buff)))
         }).and_then(|(stream, buff)| {
             // Send connect request
             write_all(stream, buff)

@@ -1,5 +1,5 @@
 [package]
-name = "async-socks"
+name = "socks"
 version = "0.0.1"
 authors = ["Tomasz Miąsko <tomasz.miasko@gmail.com>"]
 
