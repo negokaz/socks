@@ -50,11 +50,11 @@ pub fn connect_stream<S: Read + Write + 'static, D: ToAddr>(stream: S, dest: D) 
     }).and_then(move |(stream, mut buff)| {
         // Parse and validate authentication method.
         done(if buff[0] != VERSION {
-            Err(invalid_data("socks: Invalid version in response (not a socks 5 proxy?)"))
+            Err(invalid_data("proxy: Invalid version in response (not a socks 5 proxy?)"))
         } else if buff[1] == AUTH_NO_ACCEPTABLE {
-            Err(other("socks: None of authentication methods is acceptable to server"))
+            Err(other("proxy: No acceptable authentication methods"))
         } else if buff[1] != AUTH_NONE {
-            Err(invalid_data("socks: Server selected an invalid authentication method"))
+            Err(invalid_data("proxy: Server selected an invalid authentication method"))
         } else {
             // Prepare connect request.
             buff.clear();
@@ -71,27 +71,27 @@ pub fn connect_stream<S: Read + Write + 'static, D: ToAddr>(stream: S, dest: D) 
     }).and_then(|(stream, buff)| {
         // Parse and validate reply to connect request.
         done(if buff[0] != VERSION {
-            Err(invalid_data("socks: received invalid version in response"))
+            Err(invalid_data("proxy: received invalid version in response"))
         } else if buff[2] != RSV {
-            Err(invalid_data("socks: received invalid non-zero reserved field"))
+            Err(invalid_data("proxy: received invalid non-zero reserved field"))
         } else { match buff[1] {
             0 => Ok((stream, buff)),
-            1 => Err(other("socks-reply: General socks server failure")),
-            2 => Err(other("socks-reply: Connection not allowed by ruleset")),
-            3 => Err(other("socks-reply: Network unreachable")),
-            4 => Err(other("socks-reply: Host unreachable")),
-            5 => Err(other("socks-reply: Connection refused")),
-            6 => Err(other("socks-reply: TTL expired")),
-            7 => Err(other("socks-reply: Command not supported")),
-            8 => Err(other("socks-reply: Address type not supported")),
-            code => Err(other(format!("socks-reply: Error {}", code))),
+            1 => Err(other("proxy: General SOCKS server failure")),
+            2 => Err(other("proxy: Connection not allowed by ruleset")),
+            3 => Err(other("proxy: Network unreachable")),
+            4 => Err(other("proxy: Host unreachable")),
+            5 => Err(other("proxy: Connection refused")),
+            6 => Err(other("proxy: TTL expired")),
+            7 => Err(other("proxy: Command not supported")),
+            8 => Err(other("proxy: Address type not supported")),
+            code => Err(other(format!("proxy: Error {}", code))),
         }}).and_then(|(stream, buff)| {
             // Read address from response.
             match buff[3] {
                 ATYP_IPV4 => read_ipv4_address(stream, buff),
                 ATYP_IPV6 => read_ipv6_address(stream, buff),
                 ATYP_DOMAIN_NAME => read_domain_address(stream, buff),
-                _ => Box::new(failed(other(format!("socks: Unsupported address type {}", buff[3])))),
+                _ => Box::new(failed(other(format!("proxy: Unsupported address type {}", buff[3])))),
             }
         })
     }))
@@ -125,7 +125,7 @@ fn write_port(buffer: &mut Vec<u8>, port: u16) -> Result<()> {
 
 fn write_domain(buffer: &mut Vec<u8>, domain: &str) -> Result<()> {
     let length = try!(domain.len().try_into() .map_err(|_| {
-        invalid_input(format!("socks: invalid domain name: {}", domain))
+        invalid_input(format!("proxy: invalid domain name: {}", domain))
     }));
     try!(buffer.write(&[length]));
     try!(buffer.write(domain.as_bytes()));
@@ -174,7 +174,7 @@ fn read_domain_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFut
         // Parse domain name and port
         let domain_length = buff.len() - 2;
         str::from_utf8(&buff[0..domain_length]).map_err(|_| {
-            invalid_data("socks: received invalid domain name")
+            invalid_data("proxy: received invalid domain name")
         }).map(|domain| {
             let port = BigEndian::read_u16(&buff[domain_length..]);
             (Addr::Domain(DomainAddr::new(domain, port)), stream)
@@ -201,12 +201,139 @@ fn invalid_data<E>(error: E) -> io::Error
 }
 
 // Constants used in SOCKS version 5 protocol.
-const VERSION: u8 = 5;
-const AUTH_NONE: u8 = 0;
-const AUTH_NO_ACCEPTABLE: u8 = 255;
-const CMD_CONNECT: u8 = 1;
-const RSV: u8 = 0;
-const ATYP_IPV4: u8 = 1;
-const ATYP_IPV6: u8 = 4;
-const ATYP_DOMAIN_NAME: u8 = 3;
+pub const VERSION: u8 = 5;
+pub const AUTH_NONE: u8 = 0;
+pub const AUTH_NO_ACCEPTABLE: u8 = 255;
+pub const CMD_CONNECT: u8 = 1;
+pub const RSV: u8 = 0;
+pub const ATYP_IPV4: u8 = 1;
+pub const ATYP_IPV6: u8 = 4;
+pub const ATYP_DOMAIN_NAME: u8 = 3;
 
+#[cfg(test)]
+mod tests {
+    use address::*;
+    use protocol::*;
+    use std::convert::TryInto;
+    use std::io::*;
+    use std::str::FromStr;
+    use tokio_core::reactor::Core;
+
+    pub const REP_SUCCEEDED: u8 = 0;
+
+    struct Stream {
+        read_buff: Cursor<Vec<u8>>,
+        write_buff: Vec<u8>,
+    }
+
+    impl Stream {
+        fn new(bytes: &[u8]) -> Stream {
+            Stream {
+                read_buff: Cursor::new(bytes.to_owned()),
+                write_buff: Vec::new(),
+            }
+        }
+
+        /// Returns true if all available data have been read from.
+        fn read_all(&self) -> bool {
+            self.read_buff.position() == self.read_buff.get_ref().len().try_into().unwrap()
+        }
+
+        fn write_buffer(&self) -> &[u8] {
+            &self.write_buff
+        }
+    }
+
+    impl Read for Stream {
+        fn read(&mut self, buff: &mut [u8]) -> Result<usize> {
+            self.read_buff.read(buff)
+        }
+    }
+
+    impl Write for Stream {
+        fn write(&mut self, buff: &[u8]) -> Result<usize> {
+            self.write_buff.write(buff)
+        }
+        fn flush(&mut self) -> Result<()> {
+            self.write_buff.flush()
+        }
+    }
+
+    #[test]
+    fn connect_ipv4() {
+        let stream = Stream::new(&[
+            VERSION, AUTH_NONE,
+            VERSION, REP_SUCCEEDED, RSV, ATYP_IPV4,
+            192, 168, 1, 2,
+            8, 1,
+        ]);
+        let mut reactor = Core::new().unwrap();
+        let (addr, stream) = reactor.run(connect_stream(stream, "1.2.3.4:5")).unwrap();
+
+        assert_eq!(Addr::from_str("192.168.1.2:2049").unwrap(), addr);
+        assert_eq!([VERSION, 1, AUTH_NONE,
+                    VERSION, CMD_CONNECT, RSV, ATYP_IPV4,
+                    1, 2, 3, 4, 0, 5],
+                   stream.write_buffer());
+        assert!(stream.read_all());
+    }
+
+    #[test]
+    fn connect_ipv6() {
+        let stream = Stream::new(&[
+            VERSION, AUTH_NONE,
+            VERSION, REP_SUCCEEDED, RSV, ATYP_IPV6,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            1, 2, 3, 4,
+            8, 0,
+        ]);
+
+        let mut reactor = Core::new().unwrap();
+        let (addr, stream) = reactor.run(connect_stream(stream, "[::ffff:192.168.0.1]:80")).unwrap();
+
+        assert_eq!(Addr::from_str("[::1.2.3.4]:2048").unwrap(), addr);
+        assert_eq!([VERSION, 1, AUTH_NONE,
+                    VERSION, CMD_CONNECT, RSV, ATYP_IPV6,
+                    0, 0, 0, 0,
+                    0, 0, 0, 0,
+                    0, 0, 255, 255,
+                    192, 168, 0, 1,
+                    0, 80],
+                   stream.write_buffer());
+        assert!(stream.read_all());
+    }
+
+    #[test]
+    fn connect_domain_name() {
+        let stream = Stream::new(&[
+            VERSION, AUTH_NONE,
+            VERSION, REP_SUCCEEDED, RSV, ATYP_DOMAIN_NAME,
+            5, b'a', b'.', b'c', b'o', b'm',
+            250, 0
+        ]);
+
+        let mut reactor = Core::new().unwrap();
+        let (addr, stream) = reactor.run(connect_stream(stream, "z.com:80")).unwrap();
+
+        assert_eq!(Addr::from_str("a.com:64000").unwrap(), addr);
+        assert_eq!([VERSION, 1, AUTH_NONE,
+                    VERSION, CMD_CONNECT, RSV, ATYP_DOMAIN_NAME,
+                    5, b'z', b'.', b'c', b'o', b'm',
+                    0, 80],
+                   stream.write_buffer());
+        assert!(stream.read_all());
+    }
+
+    #[test]
+    fn connect_auth_not_acceptable() {
+        let stream = Stream::new(&[
+            VERSION, AUTH_NO_ACCEPTABLE,
+        ]);
+        let future = connect_stream(stream, "a.com:80");
+        let mut reactor = Core::new().unwrap();
+        let error = reactor.run(future).err().unwrap();
+        assert_eq!("proxy: No acceptable authentication methods", format!("{}", error));
+    }
+}
