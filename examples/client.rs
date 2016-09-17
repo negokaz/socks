@@ -15,12 +15,10 @@ fn main() {
     let handle = reactor.handle();
 
     let proxy: SocketAddr = "127.0.0.1:1080".parse().unwrap();
-    println!("Proxy address: {}", proxy);
+    let dest = "example.com:80";
+    let auth = socks::v5::Auth::None;
 
-    let destination = "example.com:80";
-    println!("Destination address: {}", destination);
-
-    let future = socks::connect_v5(&proxy, destination, &handle).and_then(|stream| {
+    let future = socks::v5::connect(&proxy, dest, auth, &handle).and_then(|stream| {
         write_all(stream, "GET / HTTP/1.1\r\nHost: example.com:80\r\nConnection: close\r\n\r\n")
     }).and_then(|(stream, _)| {
         read_to_end(stream, Vec::new())

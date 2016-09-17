@@ -4,11 +4,14 @@
 // or the MIT license <LICENSE-MIT>, at your option. You may not use
 // this file except according to those terms.
 
+//! Implementation of SOCKS4a protocol.
+
 use address::Addr;
 use address::ToAddr;
 use futures::Future;
 use futures::done;
 use protocol::*;
+use self::consts::*;
 use std::io::Read;
 use std::io::Result;
 use std::io::Write;
@@ -19,6 +22,9 @@ use tokio_core::net::TcpStream;
 use tokio_core::reactor::Handle;
 
 /// Crates a new connection through a SOCKS4a proxy.
+///
+/// If destination address is provided as a domain name, then hostname is
+/// resolved by proxy.
 pub fn connect<D>(proxy: &SocketAddr, destination: D, handle: &Handle) -> IoFuture<TcpStream>
     where D: ToAddr
 {
@@ -31,6 +37,7 @@ pub fn connect<D>(proxy: &SocketAddr, destination: D, handle: &Handle) -> IoFutu
 }
 
 /// Crates a connection through SOCKS4a proxy using an existing stream.
+#[doc(hidden)]
 pub fn connect_stream<S>(stream: S, destination: Addr) -> IoFuture<S>
     where S: Read + Write + 'static
 {
@@ -88,9 +95,11 @@ fn write_address(buffer: &mut Vec<u8>, address: &Addr) -> Result<()> {
     }
 }
 
-// Constants used in SOCKS version 4a.
-pub const VERSION: u8 = 4;
-pub const CMD_CONNECT: u8 = 1;
+/// Constants used in SOCKS version 4a.
+mod consts {
+    pub const VERSION: u8 = 4;
+    pub const CMD_CONNECT: u8 = 1;
+}
 
 #[cfg(test)]
 mod tests {
@@ -99,6 +108,7 @@ mod tests {
     use protocol::test::*;
     use tokio_core::reactor::Core;
     use v4a::*;
+    use v4a::consts::*;
 
     const RESPONSE_VERSION: u8 = 0;
     const REQUEST_GRANTED: u8 = 90;
