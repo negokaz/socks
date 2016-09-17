@@ -20,8 +20,7 @@ fn main() {
     let destination = "example.com:80";
     println!("Destination address: {}", destination);
 
-    let future = socks::connect_v5(&proxy, destination, &handle).and_then(|(addr, stream)| {
-        println!("Proxy bound address: {}", addr);
+    let future = socks::connect_v5(&proxy, destination, &handle).and_then(|stream| {
         write_all(stream, "GET / HTTP/1.1\r\nHost: example.com:80\r\nConnection: close\r\n\r\n")
     }).and_then(|(stream, _)| {
         read_to_end(stream, Vec::new())

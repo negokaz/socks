@@ -29,29 +29,21 @@ use tokio_core::net::TcpStream;
 use tokio_core::reactor::Handle;
 
 /// Crates a new connection through a SOCKS5 proxy.
-pub fn connect<D>(proxy: &SocketAddr, dest_addr: D, handle: &Handle) -> IoFuture<(Addr, TcpStream)>
+pub fn connect<D>(proxy: &SocketAddr, destination: D, handle: &Handle) -> IoFuture<TcpStream>
     where D: ToAddr
 {
-    let dest_addr = match dest_addr.to_addr() {
-        Err(e) => return Box::new(failed(e)),
-        Ok(a) => a
-    };
-    Box::new(TcpStream::connect(&proxy, handle).and_then(|stream| {
-        connect_stream(stream, dest_addr)
+    let connection = TcpStream::connect(&proxy, handle);
+    Box::new(done(destination.to_addr()).and_then(|address| {
+        connection.and_then(|stream| {
+            connect_stream(stream, address)
+        })
     }))
 }
 
 /// Crates a new connection through SOCKS5 proxy using an existing stream.
-#[doc(hidden)]
-pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
-    where S: Read + Write + 'static,
-          D: ToAddr
+pub fn connect_stream<S>(stream: S, destination: Addr) -> IoFuture<S>
+    where S: Read + Write + 'static
 {
-    let dest_addr = match dest_addr.to_addr() {
-        Err(e) => return Box::new(failed(e)),
-        Ok(a) => a,
-    };
-
     // Send socks version and supported authentication methods.
     Box::new(write_all(stream, vec![VERSION, 1, AUTH_NONE]).and_then(|(stream, mut buff)| {
         // Receive server version and selected authentication method.
@@ -69,7 +61,7 @@ pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
             // Prepare connect request.
             buff.clear();
             buff.extend(&[VERSION, CMD_CONNECT, RSV]);
-            write_address(&mut buff, &dest_addr).and(Ok((stream, buff)))
+            write_address(&mut buff, &destination).and(Ok((stream, buff)))
         }).and_then(|(stream, buff)| {
             // Send connect request
             write_all(stream, buff)
@@ -80,11 +72,13 @@ pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
         read_exact(stream, buff)
     }).and_then(|(stream, buff)| {
         // Parse and validate reply to connect request.
-        done(if buff[0] != VERSION {
-            Err(invalid_data("proxy: received invalid version in response"))
-        } else if buff[2] != RSV {
-            Err(invalid_data("proxy: received invalid non-zero reserved field"))
-        } else { match buff[1] {
+        if buff[0] != VERSION {
+            return Err(invalid_data("proxy: received invalid version in response"));
+        }
+        if buff[2] != RSV {
+            return Err(invalid_data("proxy: received invalid non-zero reserved field"))
+        }
+        match buff[1] {
             0 => Ok((stream, buff)),
             1 => Err(other("proxy: General SOCKS server failure")),
             2 => Err(other("proxy: Connection not allowed by ruleset")),
@@ -95,15 +89,17 @@ pub fn connect_stream<S, D>(stream: S, dest_addr: D) -> IoFuture<(Addr, S)>
             7 => Err(other("proxy: Command not supported")),
             8 => Err(other("proxy: Address type not supported")),
             code => Err(other(format!("proxy: Error {}", code))),
-        }}).and_then(|(stream, buff)| {
-            // Read address from response.
-            match buff[3] {
-                ATYP_IPV4 => read_ipv4_address(stream, buff),
-                ATYP_IPV6 => read_ipv6_address(stream, buff),
-                ATYP_DOMAIN_NAME => read_domain_address(stream, buff),
-                _ => Box::new(failed(other(format!("proxy: Unsupported address type {}", buff[3])))),
-            }
-        })
+        }
+    }).and_then(|(stream, buff)| {
+        // Read address from response.
+        match buff[3] {
+            ATYP_IPV4 => read_ipv4_address(stream, buff),
+            ATYP_IPV6 => read_ipv6_address(stream, buff),
+            ATYP_DOMAIN_NAME => read_domain_address(stream, buff),
+            _ => Box::new(failed(other(format!("proxy: Unsupported address type {}", buff[3])))),
+        }
+    }).map(|(_, stream)| {
+        stream
     }))
 }
 
@@ -200,7 +196,6 @@ pub const ATYP_DOMAIN_NAME: u8 = 3;
 mod tests {
     use address::*;
     use protocol::test::*;
-    use std::str::FromStr;
     use tokio_core::reactor::Core;
     use v5::*;
 
@@ -215,9 +210,9 @@ mod tests {
             8, 1,
         ]);
         let mut reactor = Core::new().unwrap();
-        let (addr, stream) = reactor.run(connect_stream(stream, "1.2.3.4:5")).unwrap();
+        let address = "1.2.3.4:5".to_addr().unwrap();
+        let stream = reactor.run(connect_stream(stream, address)).unwrap();
 
-        assert_eq!(Addr::from_str("192.168.1.2:2049").unwrap(), addr);
         assert_eq!([VERSION, 1, AUTH_NONE,
                     VERSION, CMD_CONNECT, RSV, ATYP_IPV4,
                     1, 2, 3, 4, 0, 5],
@@ -238,9 +233,9 @@ mod tests {
         ]);
 
         let mut reactor = Core::new().unwrap();
-        let (addr, stream) = reactor.run(connect_stream(stream, "[::ffff:192.168.0.1]:80")).unwrap();
+        let address = "[::ffff:192.168.0.1]:80".to_addr().unwrap();
+        let stream = reactor.run(connect_stream(stream, address)).unwrap();
 
-        assert_eq!(Addr::from_str("[::1.2.3.4]:2048").unwrap(), addr);
         assert_eq!([VERSION, 1, AUTH_NONE,
                     VERSION, CMD_CONNECT, RSV, ATYP_IPV6,
                     0, 0, 0, 0,
@@ -262,9 +257,9 @@ mod tests {
         ]);
 
         let mut reactor = Core::new().unwrap();
-        let (addr, stream) = reactor.run(connect_stream(stream, "z.com:80")).unwrap();
+        let address = "z.com:80".to_addr().unwrap();
+        let stream = reactor.run(connect_stream(stream, address)).unwrap();
 
-        assert_eq!(Addr::from_str("a.com:64000").unwrap(), addr);
         assert_eq!([VERSION, 1, AUTH_NONE,
                     VERSION, CMD_CONNECT, RSV, ATYP_DOMAIN_NAME,
                     5, b'z', b'.', b'c', b'o', b'm',
@@ -278,9 +273,10 @@ mod tests {
         let stream = Stream::new(&[
             VERSION, AUTH_NO_ACCEPTABLE,
         ]);
-        let future = connect_stream(stream, "a.com:80");
+
         let mut reactor = Core::new().unwrap();
-        let error = reactor.run(future).err().unwrap();
+        let address = "a.com:80".to_addr().unwrap();
+        let error = reactor.run(connect_stream(stream, address)).err().unwrap();
         assert_eq!("proxy: No acceptable authentication methods", format!("{}", error));
     }
 }
