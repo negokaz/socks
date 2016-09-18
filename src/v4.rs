@@ -8,9 +8,9 @@
 
 use address::Addr;
 use address::ToAddr;
+use common::*;
 use futures::Future;
 use futures::done;
-use protocol::*;
 use self::consts::*;
 use std::io::Read;
 use std::io::Result;
@@ -105,10 +105,10 @@ mod consts {
 mod tests {
 
     use address::*;
-    use protocol::test::*;
+    use common::test::*;
     use tokio_core::reactor::Core;
-    use v4a::*;
-    use v4a::consts::*;
+    use v4::*;
+    use v4::consts::*;
 
     const RESPONSE_VERSION: u8 = 0;
     const REQUEST_GRANTED: u8 = 90;

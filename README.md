@@ -18,11 +18,10 @@ extern crate socks;
 
 ...
 
-let proxy: SocketAddr = "127.0.0.1:1080".parse().unwrap();
+let proxy = "socks5://user:pass@127.0.0.1:1080";
 let dest = "example.com:80";
-let auth = socks::v5::Auth:None;
 
-socks::v5::connect(&proxy, dest, auth, &reactor.handle()).and_then(|conn| {
+socks::connect(&proxy, dest, &reactor.handle()).and_then(|conn| {
   ...
 });
 ```

@@ -11,11 +11,11 @@ use address::DomainAddr;
 use address::ToAddr;
 use byteorder::BigEndian;
 use byteorder::ByteOrder;
+use common::*;
 use futures::Future;
 use futures::done;
 use futures::failed;
 use futures::finished;
-use protocol::*;
 use self::consts::*;
 use std::convert::TryInto;
 use std::io::Read;
@@ -262,7 +262,7 @@ mod consts {
 #[cfg(test)]
 mod tests {
     use address::*;
-    use protocol::test::*;
+    use common::test::*;
     use tokio_core::reactor::Core;
     use v5::*;
     use v5::consts::*;
