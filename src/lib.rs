@@ -78,6 +78,12 @@ pub fn connect<D>(proxy_url: &str, destination: D, handle: &Handle) -> IoFuture<
             Ok(url) => url,
             Err(err) => return Err(invalid_input(format!("proxy: {}: {}", err, proxy_url))),
         };
+        let version = match url.scheme() {
+            "socks4"  => Version::V4,
+            "socks4a" => Version::V4,
+            "socks5"  => Version::V5,
+            _ => return Err(invalid_input(format!("proxy: Unsupported scheme {}", url.scheme()))),
+        };
         let host = match url.host() {
             Some(host) => host,
             None => return Err(invalid_input(format!("proxy: Missing host {}", proxy_url))),
@@ -99,17 +105,17 @@ pub fn connect<D>(proxy_url: &str, destination: D, handle: &Handle) -> IoFuture<
             v5::Auth::None
         };
         let destination = try!(destination.to_addr());
-        Ok((url.scheme().to_owned(), address, destination, auth, handle.clone()))
-    })()).and_then(|(scheme, address, destination, auth, handle)| {
+        Ok((version, address, destination, auth, handle.clone()))
+    })()).and_then(|(version, address, destination, auth, handle)| {
         tcp_connect(&address, &handle).and_then(move |stream| {
-            match scheme.as_str() {
-                "socks4"  => v4::connect_stream(stream, destination),
-                "socks4a" => v4::connect_stream(stream, destination),
-                "socks5"  => v5::connect_stream(stream, destination, auth),
-                _         => Box::new(done(Err(invalid_input(format!("proxy: Unsupported scheme {}", scheme))))),
+            match version {
+                Version::V4 => v4::connect_stream(stream, destination),
+                Version::V5 => v5::connect_stream(stream, destination, auth),
             }
         })
     }))
 }
 
+/// Version of SOCKS protocol.
+enum Version { V4, V5 }
 
