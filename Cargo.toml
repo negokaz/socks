@@ -5,6 +5,7 @@ authors = ["Tomasz Miąsko <tomasz.miasko@gmail.com>"]
 
 [dependencies]
 byteorder = "0.5"
-futures = "0.1"
-tokio-core = "0.1"
-url = { git = "https://github.com/servo/rust-url" }
+futures = "^0.1"
+tokio-core = { git = "https://github.com/tokio-rs/tokio-core.git" }
+tokio-dns = { git = "https://github.com/sbstp/tokio-dns" }
+url = "^1.2"

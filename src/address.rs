@@ -12,6 +12,8 @@ use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::SocketAddrV6;
 use std::str::FromStr;
+use tokio_dns::Endpoint;
+use tokio_dns::ToEndpoint;
 
 /// A domain address which is a (domain name, port) combination.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -126,7 +128,8 @@ fn invalid_address(s: &str) -> Error {
 }
 
 
-/// A trait for objects which can be converted to `Addr`.
+/// A trait for objects which can be converted to address as used by SOCKS
+/// protocol.
 /// 
 /// By default is implemented for the following types:
 ///
@@ -188,6 +191,22 @@ impl<'a> ToAddr for (&'a str, u16) {
 impl<'a> ToAddr for (&'a str) {
     fn to_addr(&self) -> Result<Addr> {
         Addr::from_str(self)
+    }
+}
+
+#[doc(hidden)]
+/// Converts an address to an endpoint as used by tokio-dns crate.
+///
+/// This is an implementation detail. Presence of `ToEndpoint` implementation
+/// for `Addr should not be relied upon.
+impl<'a> ToEndpoint<'a> for &'a Addr {
+    fn to_endpoint(self) -> Result<Endpoint<'a>> {
+        let endpoint = match *self {
+            Addr::Domain(ref da) => Endpoint::Host(da.domain(), da.port()),
+            Addr::V4(sa) => Endpoint::SocketAddr(SocketAddr::V4(sa)),
+            Addr::V6(sa) => Endpoint::SocketAddr(SocketAddr::V6(sa)),
+        };
+        Ok(endpoint)
     }
 }
 
