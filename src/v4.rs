@@ -16,6 +16,7 @@ use std::io::Read;
 use std::io::Result;
 use std::io::Write;
 use std::net::SocketAddr;
+use tokio_core::io::IoFuture;
 use tokio_core::io::read_exact;
 use tokio_core::io::write_all;
 use tokio_core::net::TcpStream;
@@ -39,9 +40,9 @@ pub fn connect<D>(proxy: &SocketAddr, destination: D, handle: &Handle) -> IoFutu
 /// Crates a connection through SOCKS4a proxy using an existing stream.
 #[doc(hidden)]
 pub fn connect_stream<S>(stream: S, destination: Addr) -> IoFuture<S>
-    where S: Read + Write + 'static
+    where S: Read + Write + Send + 'static
 {
-    Box::new(done({
+    done({
         let mut buffer = Vec::new();
         write_request(&mut buffer, &destination).and(Ok(buffer))
     }).and_then(move |buffer| {
@@ -60,7 +61,7 @@ pub fn connect_stream<S>(stream: S, destination: Addr) -> IoFuture<S>
             93 => Err(other("proxy: Request rejected because the client program and identd report different user-ids")),
             code => Err(other(format!("proxy: Error {}", code))),
         }
-    }))
+    }).boxed()
 }
 
 /// Writes a connect request to a given buffer.

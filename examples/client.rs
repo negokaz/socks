@@ -12,11 +12,11 @@ use tokio_core::reactor::Core;
 
 fn main() {
     let mut reactor = Core::new().unwrap();
-    let handle = reactor.handle();
+    let remote = reactor.remote();
 
     let proxy = args().nth(1).expect("Usage: proxy_url");
     let dest = "example.com:80";
-    let future = socks::connect(&proxy, dest, &handle).and_then(|stream| {
+    let future = socks::connect(&proxy, dest, &remote).and_then(|stream| {
         write_all(stream, "GET / HTTP/1.1\r\nHost: example.com:80\r\nConnection: close\r\n\r\n")
     }).and_then(|(stream, _)| {
         read_to_end(stream, Vec::new())

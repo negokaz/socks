@@ -6,13 +6,10 @@
 
 use byteorder::BigEndian;
 use byteorder::WriteBytesExt;
-use futures::Future;
 use std::error;
 use std::io::ErrorKind;
 use std::io;
 use std::io::Result;
-
-pub type IoFuture<T> = Box<Future<Item=T, Error=io::Error>>;
 
 /// Returns a new error of other kind.
 pub fn other<E>(error: E) -> io::Error

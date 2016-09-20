@@ -27,6 +27,7 @@ use std::net::SocketAddr;
 use std::net::SocketAddrV4;
 use std::net::SocketAddrV6;
 use std::str;
+use tokio_core::io::IoFuture;
 use tokio_core::io::read_exact;
 use tokio_core::io::write_all;
 use tokio_core::net::TcpStream;
@@ -59,7 +60,7 @@ pub fn connect<D>(proxy: &SocketAddr, destination: D, auth: Auth, handle: &Handl
 /// Crates a new connection through SOCKS5 proxy using an existing stream.
 #[doc(hidden)]
 pub fn connect_stream<S>(stream: S, destination: Addr, auth: Auth) -> IoFuture<S>
-    where S: Read + Write + 'static
+    where S: Read + Write + Send + 'static
 {
     let auth_method = match auth {
         Auth::None => AUTH_NONE,
@@ -133,12 +134,12 @@ pub fn connect_stream<S>(stream: S, destination: Addr, auth: Auth) -> IoFuture<S
 }
 
 fn authenticate<S>(stream: S, mut buffer: Vec<u8>, auth: Auth) -> IoFuture<(S, Vec<u8>)>
-    where S: Read + Write + 'static
+    where S: Read + Write + Send + 'static
 {
     match auth {
-        Auth::None => Box::new(finished((stream, buffer))),
+        Auth::None => finished((stream, buffer)).boxed(),
         Auth::UserPass(ref user, ref pass) => {
-            Box::new(done((|| {
+            done((|| {
                 let user_len = try!(user.len().try_into().map_err(|_| invalid_input("proxy: Username length exceeds 255 bytes")));
                 let pass_len = try!(pass.len().try_into().map_err(|_| invalid_input("proxy: Password length exceeds 255 bytes")));
                 buffer.clear();
@@ -160,7 +161,7 @@ fn authenticate<S>(stream: S, mut buffer: Vec<u8>, auth: Auth) -> IoFuture<(S, V
                     return Err(other("proxy: Authentication failure"))
                 }
                 Ok((stream, buffer))
-            }))
+            }).boxed()
         }
     }
 }
@@ -194,21 +195,25 @@ fn write_domain(buffer: &mut Vec<u8>, domain: &str) -> Result<()> {
     Ok(())
 }
 
-fn read_ipv4_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)> {
+fn read_ipv4_address<S>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)>
+    where S: Read + Send + 'static
+{
     // Read IPv4 address and port.
     buff.resize(6, 0);
-    Box::new(read_exact(stream, buff).map(|(stream, buff)| {
+    read_exact(stream, buff).map(|(stream, buff)| {
         // Parse IPv4 address and port.
         let ip = Ipv4Addr::new(buff[0], buff[1], buff[2], buff[3]);
         let port = BigEndian::read_u16(&buff[4..6]);
         (Addr::V4(SocketAddrV4::new(ip, port)), stream)
-    }))
+    }).boxed()
 }
 
-fn read_ipv6_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)> {
+fn read_ipv6_address<S>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)>
+    where S: Read + Send + 'static
+{
     // Read IPv6 address and port.
     buff.resize(18, 0);
-    Box::new(read_exact(stream, buff).map(|(stream, buff)| {
+    read_exact(stream, buff).map(|(stream, buff)| {
         // Parse IPv6 address and port.
         let ip = Ipv6Addr::new(
             BigEndian::read_u16(&buff[0..2]),
@@ -221,13 +226,15 @@ fn read_ipv6_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFutur
             BigEndian::read_u16(&buff[14..16]));
         let port = BigEndian::read_u16(&buff[16..18]);
         (Addr::V6(SocketAddrV6::new(ip, port, 0, 0)), stream)
-    }))
+    }).boxed()
 }
 
-fn read_domain_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)> {
+fn read_domain_address<S>(stream: S, mut buff: Vec<u8>) -> IoFuture<(Addr, S)>
+    where S: Read + Send + 'static
+{
     // Read domain name length.
     buff.resize(1, 0);
-    Box::new(read_exact(stream, buff).and_then(|(stream, mut buff)| {
+    read_exact(stream, buff).and_then(|(stream, mut buff)| {
         // Read domain name and port.
         let domain_length = usize::from(buff[0]) + 2;
         buff.resize(domain_length, 0);
@@ -241,7 +248,7 @@ fn read_domain_address<S: Read + 'static>(stream: S, mut buff: Vec<u8>) -> IoFut
             let port = BigEndian::read_u16(&buff[domain_length..]);
             (Addr::Domain(DomainAddr::new(domain, port)), stream)
         })
-    }))
+    }).boxed()
 }
 
 /// Constants used in SOCKS version 5.
