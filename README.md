@@ -21,7 +21,7 @@ extern crate socks;
 let proxy = "socks5://user:pass@127.0.0.1:1080";
 let dest = "example.com:80";
 
-socks::connect(&proxy, dest, &reactor.handle()).and_then(|conn| {
+socks::connect(&proxy, dest, reactor.remote()).and_then(|conn| {
   ...
 });
 ```

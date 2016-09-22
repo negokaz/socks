@@ -26,7 +26,7 @@
 //!     let proxy = "socks5://192.168.0.1:1080";
 //!     let destination = "example.com:80";
 //!     let mut reactor = Core::new().unwrap();
-//!     let conn = socks::connect(proxy, destination, &reactor.remote());
+//!     let conn = socks::connect(proxy, destination, reactor.remote());
 //!     reactor.run(conn).unwrap();
 //! }
 //! ```
@@ -71,10 +71,9 @@ use url::Url;
 /// Where protocol is one of `socks4`, `socks4a` or `socks5`. Note that only
 /// version 5 of SOCKS protocol supports username-password authentication.
 ///
-pub fn connect<D>(proxy_url: &str, destination: D, remote: &Remote) -> IoFuture<TcpStream>
+pub fn connect<D>(proxy_url: &str, destination: D, remote: Remote) -> IoFuture<TcpStream>
     where D: ToAddr 
 {
-    let remote = remote.clone();
     done((|| {
         let url = match Url::parse(proxy_url) {
             Ok(url) => url,
@@ -109,7 +108,7 @@ pub fn connect<D>(proxy_url: &str, destination: D, remote: &Remote) -> IoFuture<
         let destination = try!(destination.to_addr());
         Ok((version, address, destination, auth))
     })()).and_then(move |(version, address, destination, auth)| {
-        tcp_connect(&address, &remote).and_then(move |stream| {
+        tcp_connect(&address, remote).and_then(move |stream| {
             match version {
                 Version::V4 => v4::connect_stream(stream, destination),
                 Version::V5 => v5::connect_stream(stream, destination, auth),
