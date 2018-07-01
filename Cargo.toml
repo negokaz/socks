@@ -6,6 +6,6 @@ authors = ["Tomasz Miąsko <tomasz.miasko@gmail.com>"]
 [dependencies]
 byteorder = "0.5"
 futures = "^0.1"
-tokio-core = { git = "https://github.com/tokio-rs/tokio-core.git" }
-tokio-dns = { git = "https://github.com/sbstp/tokio-dns" }
+tokio-core = "0.1"
+tokio-dns-unofficial = "0.1"
 url = "^1.2"
